@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BudgetBuddy — Finance for students</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loadingScreen">
+  <div class="spinner-coin"></div>
+  <p>Counting your coins…</p>
+</div>
+
+<!-- ================= AUTH SCREEN ================= -->
+<div id="authScreen" style="display:none;">
+  <div class="auth-wrap">
+    <div class="auth-side">
+      <div>
+        <div class="brand"><div class="coin-mark">B</div> BudgetBuddy</div>
+        <h1>Money sense,<br>built for student life.</h1>
+        <p>Track pocket money, part-time pay, rent and everything in between — one honest dashboard, no spreadsheets.</p>
+      </div>
+      <div class="jar-svg-wrap" style="width:90px;height:120px;">
+        <svg viewBox="0 0 90 120" width="90" height="120">
+          <path d="M18 30 Q18 20 28 20 L62 20 Q72 20 72 30 L72 96 Q72 108 60 108 L30 108 Q18 108 18 96 Z" fill="none" stroke="#D4A537" stroke-width="2.5"/>
+          <rect x="30" y="10" width="30" height="12" rx="4" fill="#D4A537" opacity="0.9"/>
+          <clipPath id="jarClipDecor"><path d="M18 30 Q18 20 28 20 L62 20 Q72 20 72 30 L72 96 Q72 108 60 108 L30 108 Q18 108 18 96 Z"/></clipPath>
+          <g clip-path="url(#jarClipDecor)">
+            <rect x="15" y="55" width="60" height="60" fill="#D4A537" opacity="0.35">
+              <animate attributeName="y" values="70;62;70" dur="3.5s" repeatCount="indefinite"/>
+            </rect>
+          </g>
+        </svg>
+      </div>
+      <div class="auth-quote">"A budget is telling your money where to go instead of wondering where it went."</div>
+    </div>
+    <div class="auth-form">
+      <div class="tabbar">
+        <button id="tabLogin" class="active" onclick="switchAuthTab('login')">Log in</button>
+        <button id="tabRegister" onclick="switchAuthTab('register')">Create account</button>
+      </div>
+
+      <form id="loginForm" onsubmit="return handleLogin(event)">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="loginUsername" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <div class="password-field">
+            <input type="password" id="loginPassword" autocomplete="current-password" required>
+            <button type="button" class="password-toggle" onclick="togglePasswordVisibility('loginPassword', this)">Show</button>
+          </div>
+        </div>
+        <div class="auth-error" id="loginError"></div>
+        <button type="submit" class="btn btn-primary btn-full" onclick="rippleFx(event)">Log in</button>
+        <div class="auth-hint">New here? <a href="#" onclick="switchAuthTab('register');return false;" style="color:var(--sage);font-weight:600;">Create a free account</a></div>
+      </form>
+
+      <form id="registerForm" style="display:none;" onsubmit="return handleRegister(event)">
+        <div class="field">
+          <label>Full name</label>
+          <input type="text" id="regName" required>
+        </div>
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="regUsername" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <div class="password-field">
+            <input type="password" id="regPassword" autocomplete="new-password" required minlength="6" oninput="updatePasswordHint()">
+            <button type="button" class="password-toggle" onclick="togglePasswordVisibility('regPassword', this)">Show</button>
+          </div>
+          <div class="password-hint" id="regPasswordHint">At least 6 characters, one capital letter, and one symbol (e.g. ! @ # $).</div>
+        </div>
+        <div class="field">
+          <label>Currency</label>
+          <select id="regCurrency">
+            <option value="KSh">KSh — Kenyan Shilling</option>
+            <option value="$">$ — US Dollar</option>
+            <option value="£">£ — British Pound</option>
+            <option value="€">€ — Euro</option>
+            <option value="₦">₦ — Nigerian Naira</option>
+            <option value="UGX">UGX — Ugandan Shilling</option>
+            <option value="TSh">TSh — Tanzanian Shilling</option>
+          </select>
+        </div>
+        <div class="auth-error" id="registerError"></div>
+        <button type="submit" class="btn btn-gold btn-full" onclick="rippleFx(event)">Create account</button>
+        <div class="auth-hint">Already budgeting with us? <a href="#" onclick="switchAuthTab('login');return false;" style="color:var(--sage);font-weight:600;">Log in</a></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MAIN APP ================= -->
+<div id="app">
+  <aside class="sidebar">
+    <div>
+      <div class="brand"><div class="coin-mark">B</div> BudgetBuddy</div>
+      <nav>
+        <div class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          Dashboard
+        </div>
+        <div class="nav-item" data-view="transactions" onclick="switchView('transactions')">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          Transactions
+        </div>
+        <div class="nav-item" data-view="budgets" onclick="switchView('budgets')">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          Budgets
+        </div>
+        <div class="nav-item" data-view="reports" onclick="switchView('reports')">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 17v-6m4 6V7m4 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          Reports
+        </div>
+        <div class="nav-item" data-view="profile" onclick="switchView('profile')">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          Profile
+        </div>
+      </nav>
+    </div>
+    <div class="sidebar-foot">
+      <div class="user-chip">
+        <div class="avatar" id="sideAvatar">S</div>
+        <div>
+          <div class="u-name" id="sideUserName">Student</div>
+          <div class="u-sub" id="sideUserSub">@username</div>
+        </div>
+      </div>
+      <div class="logout-link" onclick="logout()">Log out →</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- DASHBOARD -->
+    <div class="view active" id="view-dashboard">
+      <div class="topbar">
+        <div>
+          <h1 id="greeting">Welcome back</h1>
+          <div class="sub">Here's your financial health at a glance.</div>
+        </div>
+        <div class="actions-row">
+          <button class="btn btn-gold" onclick="openTransactionModal()">+ Add transaction</button>
+        </div>
+      </div>
+
+      <div id="alertBanners"></div>
+
+      <div class="grid-4">
+        <div class="card hoverable">
+          <div class="stat-label">Total income</div>
+          <div class="stat-value mono" id="statIncome">0</div>
+          <div class="stat-delta up">This month</div>
+        </div>
+        <div class="card hoverable">
+          <div class="stat-label">Total expenses</div>
+          <div class="stat-value mono" id="statExpense">0</div>
+          <div class="stat-delta down">This month</div>
+        </div>
+        <div class="card hoverable">
+          <div class="stat-label">Balance</div>
+          <div class="stat-value mono" id="statBalance">0</div>
+          <div class="stat-delta" id="statBalanceDelta">—</div>
+        </div>
+        <div class="card hoverable">
+          <div class="stat-label">Top category</div>
+          <div class="stat-value" id="statTopCat" style="font-size:19px;">—</div>
+          <div class="stat-delta" id="statTopCatAmt">—</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h3>How your total income is spent</h3></div>
+          <div class="chart-box" id="categoryChartWrap"></div>
+          <div id="categoryChartSubtitle" style="text-align:center;font-size:13px;color:var(--ink-soft);margin-top:10px;"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h3>Savings goals</h3>
+            <span class="btn btn-ghost btn-sm" onclick="openGoalModal()">+ New goal</span>
+          </div>
+          <div id="goalsList"></div>
+          <div id="goalsEmpty" class="empty-state" style="display:none; padding:26px 10px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="4"/></svg>
+            <div>No goals yet. Set one for that laptop, deposit, or trip fund.</div>
+            <button class="btn btn-primary" onclick="openGoalModal()">Set your first goal</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Recent transactions</h3>
+          <span class="btn btn-ghost btn-sm" onclick="switchView('transactions')">View all →</span>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right;">Amount</th></tr></thead>
+          <tbody id="recentTxBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- TRANSACTIONS -->
+    <div class="view" id="view-transactions">
+      <div class="topbar">
+        <div>
+          <h1>Transactions</h1>
+          <div class="sub">Every shilling, coin or note — logged.</div>
+        </div>
+        <div class="actions-row">
+          <input type="text" id="txSearch" placeholder="Search description or category…" oninput="renderTransactionsView()" style="padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:13.5px;min-width:200px;">
+          <select id="txFilterCategory" onchange="renderTransactionsView()" style="padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:13.5px;"></select>
+          <select id="txFilterType" onchange="renderTransactionsView()" style="padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:13.5px;">
+            <option value="all">All types</option>
+            <option value="income">Income only</option>
+            <option value="expense">Expenses only</option>
+          </select>
+          <button class="btn btn-gold" onclick="openTransactionModal()">+ Add transaction</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:18px;">
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th class="sortable-th" onclick="setTxSort('date')">Date <span id="sortArrow-date"></span></th>
+            <th>Description</th>
+            <th>Category</th>
+            <th class="sortable-th" style="text-align:right;" onclick="setTxSort('amount')">Amount <span id="sortArrow-amount"></span></th>
+            <th></th>
+          </tr></thead>
+          <tbody id="allTxBody"></tbody>
+        </table></div>
+        <div id="txEmptyState" class="empty-state" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/></svg>
+          <div>No transactions yet. Every budget starts with the first entry.</div>
+          <button class="btn btn-primary" onclick="openTransactionModal()">Log your first transaction</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Recurring transactions</h3>
+          <span class="btn btn-ghost btn-sm" onclick="openRecurringModal()">+ Add recurring</span>
+        </div>
+        <div id="recurringList"></div>
+      </div>
+    </div>
+
+    <!-- BUDGETS -->
+    <div class="view" id="view-budgets">
+      <div class="topbar">
+        <div>
+          <h1>Budgets</h1>
+          <div class="sub">Set a monthly limit per category — watch the jar fill as you spend.</div>
+        </div>
+        <div class="actions-row">
+          <button class="btn btn-gold" onclick="openBudgetModal()">+ Set budget</button>
+        </div>
+      </div>
+      <div class="jars-grid" id="jarsGrid"></div>
+      <div id="budgetEmptyState" class="empty-state" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        <div>No budgets set yet. Give each category a limit to stay ahead of overspending.</div>
+        <button class="btn btn-primary" onclick="openBudgetModal()">Set your first budget</button>
+      </div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="view" id="view-reports">
+      <div class="topbar">
+        <div>
+          <h1>Reports</h1>
+          <div class="sub">Export a summary for any month — CSV for the numbers, print for a clean copy.</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h3>Choose a month</h3></div>
+          <div class="field">
+            <label>Month</label>
+            <select id="reportMonth" onchange="renderReportPreview()"></select>
+          </div>
+          <div class="actions-row" style="margin-top:14px;">
+            <button class="btn btn-primary" onclick="exportCSV()">⬇ Export CSV</button>
+            <button class="btn btn-ghost" onclick="exportPrintReport()">🖨 Printable report</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Summary preview</h3></div>
+          <div class="report-preview" id="reportPreview"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>6-month history</h3></div>
+        <div id="spendingHistory"></div>
+      </div>
+    </div>
+
+    <!-- PROFILE -->
+    <div class="view" id="view-profile">
+      <div class="topbar">
+        <div>
+          <h1>Profile & settings</h1>
+          <div class="sub">Your account details and preferences.</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h3>Your information</h3></div>
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+            <div class="avatar" id="profileAvatar" style="width:56px;height:56px;font-size:22px;">S</div>
+            <div>
+              <div style="font-weight:700;font-size:17px;" id="profileName">—</div>
+              <div style="color:var(--ink-soft);font-size:13px;" id="profileUsername">—</div>
+            </div>
+          </div>
+          <div class="report-line"><span>Member since</span><span class="mono" id="profileSince">—</span></div>
+          <div class="report-line"><span>Current currency</span><span class="mono" id="profileCurrencyDisplay">—</span></div>
+          <div class="report-line"><span>Transactions logged</span><span class="mono" id="profileTxCount">0</span></div>
+          <div class="report-line"><span>Budgets set</span><span class="mono" id="profileBudgetCount">0</span></div>
+
+          <div class="field" style="margin-top:20px;">
+            <label>Currency</label>
+            <select id="profileCurrencySelect"></select>
+          </div>
+          <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="updateCurrency(event)">Save currency</button>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Change password</h3></div>
+          <form id="changePasswordForm" onsubmit="return changePassword(event)">
+            <div class="field">
+              <label>Current password</label>
+              <div class="password-field">
+                <input type="password" id="curPassword" autocomplete="current-password" required>
+                <button type="button" class="password-toggle" onclick="togglePasswordVisibility('curPassword', this)">Show</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>New password</label>
+              <div class="password-field">
+                <input type="password" id="newPassword" autocomplete="new-password" minlength="6" required>
+                <button type="button" class="password-toggle" onclick="togglePasswordVisibility('newPassword', this)">Show</button>
+              </div>
+              <div class="password-hint">At least 6 characters, one capital letter, and one symbol.</div>
+            </div>
+            <div class="field">
+              <label>Confirm new password</label>
+              <div class="password-field">
+                <input type="password" id="confirmPassword" autocomplete="new-password" minlength="6" required>
+                <button type="button" class="password-toggle" onclick="togglePasswordVisibility('confirmPassword', this)">Show</button>
+              </div>
+            </div>
+            <div class="auth-error" id="pwError"></div>
+            <button type="submit" class="btn btn-primary btn-full" onclick="rippleFx(event)">Update password</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h3>Custom categories</h3></div>
+          <div class="sub" style="margin:-6px 0 14px;">Add your own on top of the built-in ones — like "Club dues" or "Side hustle".</div>
+          <div class="type-toggle" id="categoryTypeToggle">
+            <button type="button" data-type="income" onclick="setCategoryFormType('income')">Income</button>
+            <button type="button" data-type="expense" class="active" onclick="setCategoryFormType('expense')">Expense</button>
+          </div>
+          <form onsubmit="return addCustomCategory(event)" style="display:flex;gap:8px;">
+            <input type="text" id="newCategoryName" placeholder="e.g. Club dues" style="flex:1;padding:12px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:14.5px;background:var(--paper);" required>
+            <button type="submit" class="btn btn-gold" onclick="rippleFx(event)">Add</button>
+          </form>
+          <div id="customCategoryList" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Data & account</h3></div>
+          <div class="sub" style="margin:-6px 0 12px;">Back up everything, or restore from a previous export.</div>
+          <div class="actions-row">
+            <button class="btn btn-ghost" onclick="exportAllData()">⬇ Export all data</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('importFileInput').click()">⬆ Import data</button>
+            <input type="file" id="importFileInput" accept="application/json" style="display:none;" onchange="importAllData(event)">
+          </div>
+
+          <div style="border-top:1px solid var(--border); margin:22px 0 16px;"></div>
+          <div class="card-head"><h3 style="color:var(--rust);">Danger zone</h3></div>
+          <div class="sub" style="margin:-6px 0 12px;">Permanently delete your account and all data. This can't be undone.</div>
+          <button class="btn btn-ghost" style="border-color:var(--rust); color:var(--rust);" onclick="openDeleteAccountModal()">Delete my account</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Transaction Modal -->
+<div class="modal-overlay" id="transactionModalOverlay">
+  <div class="modal">
+    <h2 id="txModalTitle">Add transaction</h2>
+    <form id="transactionForm" onsubmit="return saveTransaction(event)">
+      <input type="hidden" id="txId">
+      <div class="type-toggle">
+        <button type="button" data-type="income" class="active" onclick="setTxType('income')">↓ Income</button>
+        <button type="button" data-type="expense" onclick="setTxType('expense')">↑ Expense</button>
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <input type="text" id="txDescription" placeholder="e.g. Matatu fare, part-time pay" required>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Amount</label>
+          <input type="number" id="txAmount" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="txDate" required>
+        </div>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <div class="chip-select" id="txCategoryChips"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" style="flex:1;" onclick="closeModal('transactionModalOverlay')">Cancel</button>
+        <button type="submit" class="btn btn-primary" style="flex:1;" onclick="rippleFx(event)">Save transaction</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Budget Modal -->
+<div class="modal-overlay" id="budgetModalOverlay">
+  <div class="modal">
+    <h2>Set a budget</h2>
+    <form id="budgetForm" onsubmit="return saveBudget(event)">
+      <div class="field">
+        <label>Category</label>
+        <select id="budgetCategory" required></select>
+      </div>
+      <div class="field">
+        <label>Period</label>
+        <div class="type-toggle">
+          <button type="button" data-period="monthly" class="active" onclick="setBudgetPeriod('monthly')">Monthly</button>
+          <button type="button" data-period="weekly" onclick="setBudgetPeriod('weekly')">Weekly</button>
+        </div>
+        <input type="hidden" id="budgetPeriod" value="monthly">
+      </div>
+      <div class="field">
+        <label id="budgetAmountLabel">Monthly limit</label>
+        <input type="number" id="budgetAmount" min="0" step="0.01" placeholder="0.00" required>
+      </div>
+      <div class="field">
+        <label>Description <span style="text-transform:none;font-weight:400;">(optional)</span></label>
+        <input type="text" id="budgetDescription" placeholder="e.g. Keep matatu fares in check">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" style="flex:1;" onclick="closeModal('budgetModalOverlay')">Cancel</button>
+        <button type="submit" class="btn btn-gold" style="flex:1;" onclick="rippleFx(event)">Save budget</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Savings Goal Modal -->
+<div class="modal-overlay" id="goalModalOverlay">
+  <div class="modal">
+    <h2>Set a savings goal</h2>
+    <form id="goalForm" onsubmit="return saveGoal(event)">
+      <div class="field">
+        <label>Goal name</label>
+        <input type="text" id="goalName" placeholder="e.g. New laptop, Rent deposit" required>
+      </div>
+      <div class="field">
+        <label>Target amount</label>
+        <input type="number" id="goalTarget" min="1" step="0.01" placeholder="0.00" required>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" style="flex:1;" onclick="closeModal('goalModalOverlay')">Cancel</button>
+        <button type="submit" class="btn btn-gold" style="flex:1;" onclick="rippleFx(event)">Create goal</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Recurring Transaction Modal -->
+<div class="modal-overlay" id="recurringModalOverlay">
+  <div class="modal">
+    <h2 id="recurringModalTitle">Add recurring transaction</h2>
+    <form id="recurringForm" onsubmit="return saveRecurring(event)">
+      <input type="hidden" id="recurringId">
+      <input type="hidden" id="recurringType" value="expense">
+      <div class="type-toggle" id="recurringTypeToggle">
+        <button type="button" data-type="income" onclick="setRecurringType('income')">↓ Income</button>
+        <button type="button" data-type="expense" class="active" onclick="setRecurringType('expense')">↑ Expense</button>
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <input type="text" id="recurringDescription" placeholder="e.g. Rent, Netflix, Monthly allowance" required>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Amount</label>
+          <input type="number" id="recurringAmount" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div class="field">
+          <label>Day of month</label>
+          <input type="number" id="recurringDay" min="1" max="31" placeholder="1–31" required>
+        </div>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select id="recurringCategory" required></select>
+      </div>
+      <div class="password-hint">Logged automatically each month on this day — you won't need to add it by hand again.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" style="flex:1;" onclick="closeModal('recurringModalOverlay')">Cancel</button>
+        <button type="submit" class="btn btn-gold" style="flex:1;" onclick="rippleFx(event)">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete Account Modal -->
+<div class="modal-overlay" id="deleteAccountModalOverlay">
+  <div class="modal">
+    <h2 style="color:var(--rust);">Delete your account?</h2>
+    <p style="font-size:13.5px; color:var(--ink-soft); line-height:1.6; margin-top:-8px;">
+      This permanently deletes your account, transactions, budgets, goals, and recurring items. This can't be undone.
+      Consider exporting your data first. Enter your password to confirm.
+    </p>
+    <form id="deleteAccountForm" onsubmit="return confirmDeleteAccount(event)">
+      <div class="field">
+        <label>Password</label>
+        <div class="password-field">
+          <input type="password" id="deleteAccountPassword" autocomplete="current-password" required>
+          <button type="button" class="password-toggle" onclick="togglePasswordVisibility('deleteAccountPassword', this)">Show</button>
+        </div>
+      </div>
+      <div class="auth-error" id="deleteAccountError"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" style="flex:1;" onclick="closeModal('deleteAccountModalOverlay')">Cancel</button>
+        <button type="submit" class="btn" style="flex:1;background:var(--rust);color:#fff;" onclick="rippleFx(event)">Delete permanently</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
