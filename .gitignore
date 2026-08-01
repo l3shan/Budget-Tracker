@@ -1,0 +1,4 @@
+node_modules/
+budgetbuddy.db
+budgetbuddy.db-shm
+budgetbuddy.db-wal
