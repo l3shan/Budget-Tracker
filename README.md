@@ -1,79 +1,162 @@
-# BudgetBuddy — SQLite Backend
+# BudgetBuddy
 
-A real Express + SQLite backend for the BudgetBuddy app. It replaces the
-previous client-side-only `window.storage` calls with a proper REST API and
-persistent database, and moves password hashing from the browser (SHA-256) to
-the server (bcrypt).
+BudgetBuddy is a student-focused personal finance dashboard for tracking income, expenses, budgets, savings goals, recurring transactions, and spending reports. The app is designed around a clean, single-page experience with category-based budgeting and simple account management.
 
-## Structure
+## Project summary
 
+This repository currently contains two complementary layers:
+
+1. A static frontend built with plain HTML, CSS, and JavaScript.
+2. A small Express + SQLite backend that exposes a REST API and persistent user storage.
+
+The frontend and the server are related but not fully unified in the current workspace snapshot. The browser app still uses local browser storage for its primary data flow, while the server side adds a persistent database-backed API for authentication and data access.
+
+## Features
+
+- User registration and login with password-strength validation
+- Session-based restore of logged-in state
+- Income and expense tracking
+- Budget jars for category-level spending limits
+- Savings goals with add-funds functionality
+- Recurring transaction support
+- Export and backup utilities
+- Simple report generation for monthly summaries
+
+## Repository structure
+
+```text
+Budget-Tracker/
+├── app.js              # Frontend dashboard logic and UI state management
+├── db.js               # SQLite schema and connection setup for the API layer
+├── index.html          # Main UI entry page
+├── server.js           # Express API, auth routes, and CRUD handlers
+├── style.css           # Styling for the dashboard and auth screens
+├── package.json        # Node project metadata and scripts
+└── README.md           # Project documentation
 ```
-budgetbuddy-backend/
-├── server.js          # Express app + all /api routes
-├── db.js              # SQLite schema + connection (better-sqlite3)
-├── package.json
-├── public/
-│   └── index.html      # the BudgetBuddy frontend, now calling /api/* via fetch()
-└── budgetbuddy.db      # created automatically on first run
-```
 
-## Setup
+## Runtime architecture
+
+### Frontend layer
+
+- [index.html](index.html) provides the application shell and all pages/styles used by the dashboard.
+- [app.js](app.js) contains the UI state, user session handling, rendering logic, forms, budgets, goals, reports, and export/import helpers.
+- Browser persistence is handled with a `window.storage` abstraction and fallback in-memory storage when the storage API is unavailable.
+
+### Backend layer
+
+- [server.js](server.js) is an Express service that serves authentication and data endpoints under `/api/*`.
+- [db.js](db.js) creates the SQLite database file and schema for users, transactions, budgets, and goals.
+- The backend uses `better-sqlite3`, `express`, `express-session`, and `bcryptjs`.
+
+## How data is stored
+
+The frontend stores most app data locally in browser storage keys such as:
+
+- `session`
+- `user:<username>`
+- `transactions:<username>`
+- `budgets:<username>`
+- `goals:<username>`
+- `recurring:<username>`
+- `customCategories:<username>`
+
+The server-side layer keeps persistent records in SQLite tables:
+
+- `users`
+- `transactions`
+- `budgets`
+- `goals`
+
+## Local setup
+
+### 1. Install dependencies
 
 ```bash
-cd budgetbuddy-backend
 npm install
+```
+
+### 2. Run the API server
+
+```bash
 npm start
 ```
 
-Then open **http://localhost:3000** in your browser. The server serves the
-frontend from `public/` and the API from `/api/*` on the same origin, so there
-are no CORS issues.
+The server starts on port `3000` by default:
 
-The SQLite database file `budgetbuddy.db` is created automatically the first
-time you run the server. Delete it any time to reset all data.
+```text
+http://localhost:3000
+```
 
-## How data flows
+### 3. Open the app locally
 
-- **Users**: registered via `POST /api/auth/register`, password hashed with
-  bcrypt and stored in the `users` table. Login (`POST /api/auth/login`) sets
-  an HTTP-only session cookie (via `express-session`), so the browser never
-  has to hold or resend the password after login.
-- **Transactions / budgets / goals**: each row is scoped to `user_id`, so one
-  person can never see or modify another's data (all mutating routes use
-  `requireAuth` + filter by `req.session.userId`).
-- **Session restore on page load**: the frontend's `boot()` calls
-  `GET /api/auth/session`; if the cookie is valid it gets back the user plus
-  all their transactions/budgets/goals in one response.
+If you are using the static frontend, open the root HTML file in a browser or serve the folder with a local static server. If you are using the Express backend flow, ensure the API and frontend are routed consistently before testing the browser experience.
+
+## Available scripts
+
+From [package.json](package.json):
+
+- `npm start` — starts the Express server
+- `npm run dev` — runs the same server entry point in development mode
 
 ## API reference
 
-| Method | Path                        | Auth | Description                          |
-|--------|-----------------------------|------|--------------------------------------|
-| POST   | /api/auth/register          | –    | Create account, log in               |
-| POST   | /api/auth/login             | –    | Log in                               |
-| POST   | /api/auth/logout             | –    | Log out                              |
-| GET    | /api/auth/session            | –    | Restore session on page load         |
-| PUT    | /api/auth/currency           | ✓    | Change display currency              |
-| PUT    | /api/auth/password           | ✓    | Change password                      |
-| GET    | /api/transactions             | ✓    | List all transactions                |
-| POST   | /api/transactions             | ✓    | Add a transaction                    |
-| PUT    | /api/transactions/:id          | ✓    | Edit a transaction                   |
-| DELETE | /api/transactions/:id          | ✓    | Delete a transaction                 |
-| GET    | /api/budgets                   | ✓    | Get all budgets                      |
-| PUT    | /api/budgets/:category          | ✓    | Set/update a budget                  |
-| DELETE | /api/budgets/:category          | ✓    | Remove a budget                      |
-| GET    | /api/goals                      | ✓    | List savings goals                   |
-| POST   | /api/goals                      | ✓    | Create a savings goal                |
-| PUT    | /api/goals/:id/add-funds         | ✓    | Add funds to a goal                  |
-| DELETE | /api/goals/:id                  | ✓    | Delete a goal                        |
+The server organizes all business routes under `/api`.
 
-## Notes / next steps
+### Authentication
 
-- Sessions currently use the default in-memory `express-session` store, which
-  is fine for local/single-instance use but will drop sessions on restart. For
-  production, swap in a persistent store (e.g. `connect-sqlite3`) pointed at
-  the same database.
-- Set `SESSION_SECRET` as an environment variable in production instead of
-  relying on the default dev value in `server.js`.
-- Put this behind HTTPS in production — the session cookie protects the login,
-  but cookies over plain HTTP can still be intercepted on the network.
+| Method | Path | Description |
+|---|---|---|
+| `POST /api/auth/register` | Register a new user and create their account | Creates the account and returns the initial session payload |
+| `POST /api/auth/login` | Log in a user | Validates the password and returns user + data |
+| `POST /api/auth/logout` | Log out the current user | Destroys the session |
+| `GET /api/auth/session` | Restore session data | Returns the current user and associated records |
+| `PUT /api/auth/currency` | Change a user's currency | Requires authentication |
+| `PUT /api/auth/password` | Change the current password | Requires authentication |
+
+### Transactions
+
+| Method | Path | Description |
+|---|---|---|
+| `GET /api/transactions` | List all transactions | Authenticated |
+| `POST /api/transactions` | Create a transaction | Authenticated |
+| `PUT /api/transactions/:id` | Update a transaction | Authenticated |
+| `DELETE /api/transactions/:id` | Delete a transaction | Authenticated |
+
+### Budgets
+
+| Method | Path | Description |
+|---|---|---|
+| `GET /api/budgets` | List all budgets | Authenticated |
+| `PUT /api/budgets/:category` | Create or update a budget entry | Authenticated |
+| `DELETE /api/budgets/:category` | Delete a budget entry | Authenticated |
+
+### Goals
+
+| Method | Path | Description |
+|---|---|---|
+| `GET /api/goals` | List savings goals | Authenticated |
+| `POST /api/goals` | Create a savings goal | Authenticated |
+| `PUT /api/goals/:id/add-funds` | Add funds to a goal | Authenticated |
+| `DELETE /api/goals/:id` | Delete a goal | Authenticated |
+
+## Notes on security and production use
+
+- The server uses a session secret fallback value in development mode. For production, set `SESSION_SECRET` in the environment.
+- Session storage uses the default in-memory express session store, which is acceptable for local testing but not for multi-instance production deployment.
+- Passwords are hashed in the backend with `bcryptjs` rather than being hashed directly in the browser.
+- In production, the application should be served behind HTTPS and the session cookie should remain `httpOnly`.
+
+## Development guidance
+
+If you want to extend the application next, the most natural areas to improve are:
+
+- unify the frontend local-storage flow with the API-backed server model
+- migrate the browser storage abstraction to a single consistent persistence layer
+- add a persistent session store for production deployments
+- add automated tests around the API and database workflows
+
+## Summary
+
+BudgetBuddy is a practical personal finance app with a student-balance-oriented design. Its current codebase combines a polished static UI with a backend-ready API foundation, making it a good candidate for deeper integration between browser-side experience and server-side persistence.
+

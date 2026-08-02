@@ -790,11 +790,236 @@ let selectedTxType = "income";
 let editingTxId = null;
 
 /* ============ API CLIENT ============ */
-// Talks to the Express + SQLite backend (server.js / db.js). The session cookie
-// (set by express-session) is sent automatically via credentials:'include'.
+// Talks to the Express + SQLite backend (server.js / db.js) when the app is served by a web server.
+// When opened directly from a file:// page, the app falls back to browser-local persistence instead.
 const API_BASE = '/api';
+const LOCAL_STATE_KEY = 'budgetbuddy_local_state_v1';
+
+function isFileOrigin(){
+  return typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
+}
+
+function getLocalState(){
+  try{
+    const raw = localStorage.getItem(LOCAL_STATE_KEY);
+    return raw ? JSON.parse(raw) : { users: {}, session: null };
+  } catch(e){
+    return { users: {}, session: null };
+  }
+}
+
+function saveLocalState(state){
+  localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(state));
+}
+
+function normalizeUsername(username){
+  return String(username || '').trim().toLowerCase();
+}
+
+async function sha256(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function publicUser(user){
+  if(!user) return null;
+  return { username: user.username, name: user.name, currency: user.currency, createdAt: user.createdAt };
+}
+
+function getUserData(username){
+  const state = getLocalState();
+  const user = state.users[username] || null;
+  if(!user) return { transactions: [], budgets: {}, goals: [] };
+  return {
+    transactions: user.transactions || [],
+    budgets: user.budgets || {},
+    goals: user.goals || []
+  };
+}
+
+function buildApiErrorMessage(status, data, networkError){
+  if(networkError){
+    if(isFileOrigin()){
+      return 'The BudgetBuddy API is not reachable from a file:// page. Refresh the page through a local server or keep using the browser-local fallback.';
+    }
+    return 'The BudgetBuddy API request failed. Make sure the server is running and try again.';
+  }
+  if(data && data.error) return data.error;
+  if(status) return 'Request failed: ' + status;
+  return 'Request failed. Please try again.';
+}
+
+async function simulateApi(method, path, body){
+  const state = getLocalState();
+  const authPath = path.split('?')[0];
+  const pathParts = authPath.split('/').filter(Boolean);
+
+  if(method === 'GET' && path === '/auth/session'){
+    if(!state.session || !state.users[state.session]) return { user: null };
+    const user = state.users[state.session];
+    const data = getUserData(state.session);
+    return { user: publicUser(user), transactions: data.transactions, budgets: data.budgets, goals: data.goals };
+  }
+
+  if(method === 'POST' && path === '/auth/register'){
+    const { name, username, password, currency } = body || {};
+    const cleanUsername = normalizeUsername(username);
+    if(!name || !cleanUsername || !password) throw new Error('Name, username, and password are required.');
+    if(!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) throw new Error('Username: 3-20 characters, letters/numbers/underscore only.');
+    if(password.length < 6 || !/[A-Z]/.test(password) || !/[^A-Za-z0-9]/.test(password)) throw new Error('Password needs 6+ characters, one capital letter, and one symbol.');
+    if(state.users[cleanUsername]) throw new Error('That username is already taken.');
+
+    const passwordHash = await sha256(password);
+    const user = { username: cleanUsername, name, currency: currency || 'KSh', passwordHash, createdAt: Date.now(), transactions: [], budgets: {}, goals: [] };
+    state.users[cleanUsername] = user;
+    state.session = cleanUsername;
+    saveLocalState(state);
+    return { user: publicUser(user), transactions: [], budgets: {}, goals: [] };
+  }
+
+  if(method === 'POST' && path === '/auth/login'){
+    const { username, password } = body || {};
+    const cleanUsername = normalizeUsername(username);
+    if(!cleanUsername || !password) throw new Error('Username and password are required.');
+    const user = state.users[cleanUsername];
+    if(!user) throw new Error('No account with that username.');
+    const hash = await sha256(password);
+    if(hash !== user.passwordHash) throw new Error('Incorrect password.');
+    state.session = cleanUsername;
+    saveLocalState(state);
+    const data = getUserData(cleanUsername);
+    return { user: publicUser(user), transactions: data.transactions, budgets: data.budgets, goals: data.goals };
+  }
+
+  if(method === 'POST' && path === '/auth/logout'){
+    state.session = null;
+    saveLocalState(state);
+    return { ok: true };
+  }
+
+  if(method === 'PUT' && path === '/auth/currency'){
+    const user = state.users[state.session];
+    if(!user) throw new Error('Not authenticated');
+    const { currency } = body || {};
+    if(!currency) throw new Error('Currency is required.');
+    user.currency = currency;
+    saveLocalState(state);
+    return { user: publicUser(user) };
+  }
+
+  if(method === 'PUT' && path === '/auth/password'){
+    const user = state.users[state.session];
+    if(!user) throw new Error('Not authenticated');
+    const { currentPassword, newPassword } = body || {};
+    const hash = await sha256(currentPassword || '');
+    if(hash !== user.passwordHash) throw new Error('Current password is incorrect.');
+    if(!newPassword || newPassword.length < 6 || !/[A-Z]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
+      throw new Error('Password needs 6+ characters, one capital letter, and one symbol.');
+    }
+    user.passwordHash = await sha256(newPassword);
+    saveLocalState(state);
+    return { ok: true };
+  }
+
+  const username = state.session;
+  if(!username || !state.users[username]) {
+    throw new Error('Not authenticated');
+  }
+
+  const user = state.users[username];
+
+  if(method === 'GET' && path === '/transactions'){
+    return user.transactions || [];
+  }
+  if(method === 'POST' && path === '/transactions'){
+    const { type, description, amount, category, date } = body || {};
+    if(!['income', 'expense'].includes(type) || !date || amount == null) throw new Error('type, amount, and date are required.');
+    const id = 'tx_' + Date.now() + Math.random().toString(36).slice(2, 7);
+    const tx = { id, type, description: description || '', amount: parseFloat(amount), category: category || '', date };
+    user.transactions = user.transactions || [];
+    user.transactions.push(tx);
+    saveLocalState(state);
+    return tx;
+  }
+  if(method === 'PUT' && pathParts[0] === 'transactions' && pathParts[1]){
+    const id = pathParts[1];
+    const { type, description, amount, category, date } = body || {};
+    user.transactions = user.transactions || [];
+    const index = user.transactions.findIndex(tx => tx.id === id);
+    if(index === -1) throw new Error('Transaction not found.');
+    user.transactions[index] = { ...user.transactions[index], type, description: description || '', amount: parseFloat(amount), category: category || '', date };
+    saveLocalState(state);
+    return user.transactions[index];
+  }
+  if(method === 'DELETE' && pathParts[0] === 'transactions' && pathParts[1]){
+    const id = pathParts[1];
+    user.transactions = (user.transactions || []).filter(tx => tx.id !== id);
+    saveLocalState(state);
+    return { ok: true };
+  }
+  if(method === 'GET' && path === '/budgets'){
+    return user.budgets || {};
+  }
+  if(method === 'PUT' && pathParts[0] === 'budgets' && pathParts[1]){
+    const category = decodeURIComponent(pathParts[1]);
+    const { amount, description } = body || {};
+    user.budgets = user.budgets || {};
+    user.budgets[category] = { amount: parseFloat(amount), description: description || '' };
+    saveLocalState(state);
+    return { category, amount: parseFloat(amount), description: description || '' };
+  }
+  if(method === 'DELETE' && pathParts[0] === 'budgets' && pathParts[1]){
+    const category = decodeURIComponent(pathParts[1]);
+    delete user.budgets[category];
+    saveLocalState(state);
+    return { ok: true };
+  }
+  if(method === 'GET' && path === '/goals'){
+    return user.goals || [];
+  }
+  if(method === 'POST' && path === '/goals'){
+    const { name, target } = body || {};
+    if(!name || target == null || isNaN(parseFloat(target))) throw new Error('name and target are required.');
+    const id = 'goal_' + Date.now() + Math.random().toString(36).slice(2, 6);
+    const goal = { id, name, target: parseFloat(target), saved: 0 };
+    user.goals = user.goals || [];
+    user.goals.push(goal);
+    saveLocalState(state);
+    return goal;
+  }
+  if(method === 'PUT' && pathParts[0] === 'goals' && pathParts[1] === 'add-funds'){
+    const id = pathParts[1];
+    const { amount } = body || {};
+    const delta = parseFloat(amount);
+    if(isNaN(delta) || delta <= 0) throw new Error('A positive amount is required.');
+    user.goals = user.goals || [];
+    const goal = user.goals.find(g => g.id === id);
+    if(!goal) throw new Error('Goal not found.');
+    goal.saved += delta;
+    saveLocalState(state);
+    return { id: goal.id, name: goal.name, target: goal.target, saved: goal.saved };
+  }
+  if(method === 'DELETE' && pathParts[0] === 'goals' && pathParts[1]){
+    const id = pathParts[1];
+    user.goals = (user.goals || []).filter(goal => goal.id !== id);
+    saveLocalState(state);
+    return { ok: true };
+  }
+
+  throw new Error('Unsupported local API route.');
+}
 
 async function api(method, path, body){
+  if(isFileOrigin()){
+    try{
+      return await simulateApi(method, path, body);
+    } catch(e){
+      const err = new Error(e.message || 'Request failed. Please try again.');
+      err.status = 0;
+      throw err;
+    }
+  }
+
   const opts = { method, credentials:'include', headers:{} };
   if(body !== undefined){
     opts.headers['Content-Type'] = 'application/json';
