@@ -1,17 +1,129 @@
-{
-  "name": "budgetbuddy-backend",
-  "version": "1.0.0",
-  "description": "BudgetBuddy — Express + SQLite backend",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
-  },
-  "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.3.0",
-    "express": "^4.19.2",
-    "express-session": "^1.18.0"
-  }
-}
+const request = require('supertest');
+const createApp = require('../../src/app');
+const { pool } = require('../../src/config/db');
+const { resetDatabase, registerAndLogin } = require('./helpers');
+
+const app = createApp();
+
+describe('Budget routes (integration)', () => {
+  let token;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    ({ token } = await registerAndLogin(request, app));
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const res = await request(app).get('/api/budgets');
+    expect(res.status).toBe(401);
+  });
+
+  it('creates a budget for the authenticated user', async () => {
+    const res = await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 500, month: 6, year: 2026 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ monthly_limit: 500, month: 6, year: 2026 });
+  });
+
+  it('returns 400 when monthly_limit is missing', async () => {
+    const res = await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ month: 6, year: 2026 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 409 when creating a duplicate budget for the same month/year', async () => {
+    await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 500, month: 6, year: 2026 });
+
+    const res = await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 700, month: 6, year: 2026 });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('lists only the authenticated user\'s budgets', async () => {
+    await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 500, month: 6, year: 2026 });
+
+    const { token: otherToken } = await registerAndLogin(request, app, {
+      email: 'other@student.edu',
+    });
+    await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ monthly_limit: 900, month: 6, year: 2026 });
+
+    const res = await request(app).get('/api/budgets').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].monthly_limit).toBe(500);
+  });
+
+  it('updates a budget the user owns', async () => {
+    const createRes = await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 500, month: 6, year: 2026 });
+
+    const res = await request(app)
+      .put(`/api/budgets/${createRes.body.data.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 650 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.monthly_limit).toBe(650);
+  });
+
+  it('returns 404 when trying to update another user\'s budget', async () => {
+    const createRes = await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 500, month: 6, year: 2026 });
+
+    const { token: otherToken } = await registerAndLogin(request, app, {
+      email: 'other@student.edu',
+    });
+
+    const res = await request(app)
+      .put(`/api/budgets/${createRes.body.data.id}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ monthly_limit: 1 });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('deletes a budget the user owns', async () => {
+    const createRes = await request(app)
+      .post('/api/budgets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ monthly_limit: 500, month: 6, year: 2026 });
+
+    const res = await request(app)
+      .delete(`/api/budgets/${createRes.body.data.id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+
+    const getRes = await request(app)
+      .get(`/api/budgets/${createRes.body.data.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(getRes.status).toBe(404);
+  });
+});
