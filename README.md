@@ -160,3 +160,8 @@ If you want to extend the application next, the most natural areas to improve ar
 
 BudgetBuddy is a practical personal finance app with a student-balance-oriented design. Its current codebase combines a polished static UI with a backend-ready API foundation, making it a good candidate for deeper integration between browser-side experience and server-side persistence.
 
+
+
+
+
+
