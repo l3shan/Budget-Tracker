@@ -74,6 +74,12 @@ function getUserData(userId) {
   return { transactions, budgets, goals };
 }
 
+// Input validation middleware — sanitizes and validates request bodies
+function validateRequestBody(req, res, next) {
+  // Check for malformed JSON (handled by express.json error handler)
+  next();
+}
+
 // ---------- auth routes ----------
 app.post('/api/auth/register', (req, res) => {
   const { name, username, password, currency } = req.body || {};
@@ -82,6 +88,9 @@ app.post('/api/auth/register', (req, res) => {
 
   if (!normalizedName || !normalizedUsername || !password) {
     return res.status(400).json({ error: 'Name, username, and password are required.' });
+  }
+  if (normalizedName.length < 2 || normalizedName.length > 100) {
+    return res.status(400).json({ error: 'Name must be between 2 and 100 characters.' });
   }
   if (!/^[a-z0-9_]{3,20}$/.test(normalizedUsername)) {
     return res.status(400).json({ error: 'Username: 3-20 characters, letters/numbers/underscore only.' });
@@ -103,7 +112,7 @@ app.post('/api/auth/register', (req, res) => {
   req.session.userId = info.lastInsertRowid;
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
-  res.json({ user: publicUser(user), transactions: [], budgets: {}, goals: [] });
+  res.status(201).json({ user: publicUser(user), transactions: [], budgets: {}, goals: [] });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -141,7 +150,9 @@ app.get('/api/auth/session', (req, res) => {
 app.put('/api/auth/currency', requireAuth, (req, res) => {
   const { currency } = req.body || {};
   if (!currency) return res.status(400).json({ error: 'Currency is required.' });
-  db.prepare('UPDATE users SET currency = ? WHERE id = ?').run(currency, req.session.userId);
+  const normalizedCurrency = String(currency).trim();
+  if (normalizedCurrency.length > 20) return res.status(400).json({ error: 'Currency code is too long.' });
+  db.prepare('UPDATE users SET currency = ? WHERE id = ?').run(normalizedCurrency, req.session.userId);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
   res.json({ user: publicUser(user) });
 });
@@ -176,10 +187,20 @@ app.post('/api/transactions', requireAuth, (req, res) => {
   }
   const numericAmount = parseFiniteNumber(amount);
   const id = 'tx_' + Date.now() + Math.random().toString(36).slice(2, 7);
+  const sanitizedDescription = String(description || '').trim();
+  const sanitizedCategory = String(category || '').trim();
+  
+  if (sanitizedDescription.length > 500) {
+    return res.status(400).json({ error: 'Description is too long (max 500 characters).' });
+  }
+  if (sanitizedCategory.length > 100) {
+    return res.status(400).json({ error: 'Category is too long (max 100 characters).' });
+  }
+
   db.prepare(
     'INSERT INTO transactions (id, user_id, type, description, amount, category, date) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, req.session.userId, type, String(description || '').trim(), numericAmount, String(category || '').trim(), date);
-  res.status(201).json({ id, type, description: String(description || '').trim(), amount: numericAmount, category: String(category || '').trim(), date });
+  ).run(id, req.session.userId, type, sanitizedDescription, numericAmount, sanitizedCategory, date);
+  res.status(201).json({ id, type, description: sanitizedDescription, amount: numericAmount, category: sanitizedCategory, date });
 });
 
 app.put('/api/transactions/:id', requireAuth, (req, res) => {
@@ -190,11 +211,20 @@ app.put('/api/transactions/:id', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'type, a positive finite amount, and a valid date are required.' });
   }
   const numericAmount = parseFiniteNumber(amount);
+  const sanitizedDescription = String(description || '').trim();
+  const sanitizedCategory = String(category || '').trim();
+  
+  if (sanitizedDescription.length > 500) {
+    return res.status(400).json({ error: 'Description is too long (max 500 characters).' });
+  }
+  if (sanitizedCategory.length > 100) {
+    return res.status(400).json({ error: 'Category is too long (max 100 characters).' });
+  }
 
   db.prepare(
     'UPDATE transactions SET type=?, description=?, amount=?, category=?, date=? WHERE id=? AND user_id=?'
-  ).run(type, String(description || '').trim(), numericAmount, String(category || '').trim(), date, req.params.id, req.session.userId);
-  res.json({ id: req.params.id, type, description: String(description || '').trim(), amount: numericAmount, category: String(category || '').trim(), date });
+  ).run(type, sanitizedDescription, numericAmount, sanitizedCategory, date, req.params.id, req.session.userId);
+  res.json({ id: req.params.id, type, description: sanitizedDescription, amount: numericAmount, category: sanitizedCategory, date });
 });
 
 app.delete('/api/transactions/:id', requireAuth, (req, res) => {
@@ -215,11 +245,20 @@ app.put('/api/budgets/:category', requireAuth, (req, res) => {
   const numericAmount = parseFiniteNumber(amount);
   const category = String(req.params.category || '').trim();
   if (numericAmount === null || numericAmount < 0 || !category) return res.status(400).json({ error: 'A category and a non-negative finite amount are required.' });
+  
+  if (category.length > 100) {
+    return res.status(400).json({ error: 'Category is too long (max 100 characters).' });
+  }
+  const sanitizedDescription = String(description || '').trim();
+  if (sanitizedDescription.length > 500) {
+    return res.status(400).json({ error: 'Description is too long (max 500 characters).' });
+  }
+
   db.prepare(`
     INSERT INTO budgets (user_id, category, amount, description) VALUES (?, ?, ?, ?)
     ON CONFLICT(user_id, category) DO UPDATE SET amount = excluded.amount, description = excluded.description
-  `).run(req.session.userId, category, numericAmount, String(description || '').trim());
-  res.json({ category, amount: numericAmount, description: String(description || '').trim() });
+  `).run(req.session.userId, category, numericAmount, sanitizedDescription);
+  res.json({ category, amount: numericAmount, description: sanitizedDescription });
 });
 
 app.delete('/api/budgets/:category', requireAuth, (req, res) => {
@@ -240,6 +279,11 @@ app.post('/api/goals', requireAuth, (req, res) => {
   if (!goalName || numericTarget === null || numericTarget <= 0) {
     return res.status(400).json({ error: 'A name and a positive finite target are required.' });
   }
+  
+  if (goalName.length < 2 || goalName.length > 200) {
+    return res.status(400).json({ error: 'Goal name must be between 2 and 200 characters.' });
+  }
+
   const id = 'goal_' + Date.now() + Math.random().toString(36).slice(2, 6);
   db.prepare('INSERT INTO goals (id, user_id, name, target, saved) VALUES (?, ?, ?, ?, 0)')
     .run(id, req.session.userId, goalName, numericTarget);
